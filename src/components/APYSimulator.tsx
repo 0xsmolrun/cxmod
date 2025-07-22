@@ -14,6 +14,7 @@ interface SimulationData {
   // Final state
   depositStatus: 'vault' | 'withdrew';
   endBlock: string; // For withdrew status
+  endBlock: string; // For withdrew status
   
   // Final amounts (for withdrew) or current exchange rate (for vault)
   finalAsset: string;
@@ -31,6 +32,7 @@ interface CalculationResult {
   finalAsset: string;
   finalAmount: number;
   startBlock: number;
+  endBlock: number;
   endBlock: number;
   numberOfDays: number;
   exchangeRateInitial: number;
@@ -85,6 +87,7 @@ export const APYSimulator: React.FC = () => {
     initialAmount: '',
     startBlock: '',
     depositStatus: 'vault',
+    endBlock: '',
     endBlock: '',
     finalAsset: 'liquidETH',
     finalAmount: '',
@@ -145,6 +148,7 @@ export const APYSimulator: React.FC = () => {
       finalAmount,
       startBlock,
       endBlock,
+      endBlock,
       numberOfDays: Math.round(numberOfDays * 100) / 100,
       exchangeRateInitial: Math.round(exchangeRateInitial * 1000000) / 1000000,
       exchangeRateFinal: Math.round(exchangeRateFinal * 1000000) / 1000000,
@@ -197,6 +201,7 @@ export const APYSimulator: React.FC = () => {
       initialAmount: '',
       startBlock: '',
       depositStatus: 'vault',
+      endBlock: '',
       endBlock: '',
       finalAsset: 'liquidETH',
       finalAmount: '',
@@ -526,6 +531,15 @@ export const APYSimulator: React.FC = () => {
         ) : (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Withdrawal Details</h3>
+            
+            <Input
+              label="End Block (Withdrawal Block)"
+              type="number"
+              value={formData.endBlock}
+              onChange={(value) => updateField('endBlock', value)}
+              placeholder="e.g., 21000000"
+              required
+            />
             
             <Input
               label="End Block (Withdrawal Block)"
