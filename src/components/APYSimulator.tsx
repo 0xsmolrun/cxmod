@@ -6,25 +6,35 @@ import { Input } from './ui/Input';
 import { Select } from './ui/Select';
 
 interface SimulationData {
-  asset1Initial: string;
-  amount1Initial: string;
-  asset2Initial: string;
-  amount2Initial: string;
+  // Initial deposit
+  initialAsset: string;
+  initialAmount: string;
   startBlock: string;
-  asset1Final: string;
-  amount1Final: string;
-  asset2Final: string;
-  amount2Final: string;
+  
+  // Final state
+  depositStatus: 'vault' | 'withdrew';
+  endBlock: string; // For withdrew status
+  
+  // Final amounts (for withdrew) or current exchange rate (for vault)
+  finalAsset: string;
+  finalAmount: string;
+  currentExchangeRate: string; // For vault status
+  
+  // APY components
   fixedYieldAPY: string;
   restakingAPY: string;
-  depositStatus: 'vault' | 'withdrew';
-  currentExchangeRate: string;
 }
 
 interface CalculationResult {
+  initialAsset: string;
+  initialAmount: number;
+  finalAsset: string;
+  finalAmount: number;
+  startBlock: number;
+  endBlock: number;
+  numberOfDays: number;
   exchangeRateInitial: number;
   exchangeRateFinal: number;
-  numberOfDays: number;
   variableYieldAPY: number;
   fixedYieldAPY: number;
   restakingAPY: number;
@@ -32,7 +42,7 @@ interface CalculationResult {
   formula: string;
 }
 
-const ASSET1_OPTIONS = [
+const ASSET_OPTIONS = [
   { value: 'cbBTC', label: 'cbBTC' },
   { value: 'DAI', label: 'DAI' },
   { value: 'eBTC', label: 'eBTC' },
@@ -50,7 +60,7 @@ const ASSET1_OPTIONS = [
   { value: 'wstETH', label: 'wstETH' }
 ];
 
-const ASSET2_OPTIONS = [
+const LIQUID_ASSET_OPTIONS = [
   { value: 'eEIGEN', label: 'eEIGEN' },
   { value: 'liquidBeraETH', label: 'liquidBeraETH' },
   { value: 'liquidBeraBTC', label: 'liquidBeraBTC' },
@@ -63,7 +73,7 @@ const ASSET2_OPTIONS = [
 ];
 
 const DEPOSIT_STATUS_OPTIONS = [
-  { value: 'vault', label: 'Deposit Still in the Vault' },
+  { value: 'vault', label: 'Still in Vault' },
   { value: 'withdrew', label: 'Withdrew' }
 ];
 
@@ -71,19 +81,16 @@ const BLOCKS_PER_DAY = 7200; // Approximate blocks per day on Ethereum
 
 export const APYSimulator: React.FC = () => {
   const [formData, setFormData] = useState<SimulationData>({
-    asset1Initial: 'WETH',
-    amount1Initial: '',
-    asset2Initial: 'liquidETH',
-    amount2Initial: '',
+    initialAsset: 'WETH',
+    initialAmount: '',
     startBlock: '',
-    asset1Final: 'WETH',
-    amount1Final: '',
-    asset2Final: 'liquidETH',
-    amount2Final: '',
-    fixedYieldAPY: '',
-    restakingAPY: '',
     depositStatus: 'vault',
-    currentExchangeRate: ''
+    endBlock: '',
+    finalAsset: 'liquidETH',
+    finalAmount: '',
+    currentExchangeRate: '',
+    fixedYieldAPY: '',
+    restakingAPY: ''
   });
 
   const [result, setResult] = useState<CalculationResult | null>(null);
@@ -95,39 +102,33 @@ export const APYSimulator: React.FC = () => {
   };
 
   const calculateAPY = (): CalculationResult => {
-    const amount1Initial = parseFloat(formData.amount1Initial);
-    const amount2Initial = parseFloat(formData.amount2Initial);
+    const initialAmount = parseFloat(formData.initialAmount);
     const startBlock = parseInt(formData.startBlock);
     const fixedYieldAPY = parseFloat(formData.fixedYieldAPY);
     const restakingAPY = parseFloat(formData.restakingAPY);
 
-    // Calculate initial exchange rate
-    let exchangeRateInitial: number;
-    if (amount1Initial > amount2Initial) {
-      exchangeRateInitial = amount1Initial / amount2Initial;
-    } else {
-      exchangeRateInitial = amount2Initial / amount1Initial;
-    }
-
-    // Calculate final exchange rate
+    let endBlock: number;
+    let finalAmount: number;
     let exchangeRateFinal: number;
+
     if (formData.depositStatus === 'vault') {
+      // Still in vault - use current block and exchange rate
+      const currentBlock = 21200000; // Approximate current block
+      endBlock = currentBlock;
       exchangeRateFinal = parseFloat(formData.currentExchangeRate);
+      finalAmount = initialAmount * exchangeRateFinal;
     } else {
-      const amount1Final = parseFloat(formData.amount1Final);
-      const amount2Final = parseFloat(formData.amount2Final);
-      
-      if (amount1Final > amount2Final) {
-        exchangeRateFinal = amount1Final / amount2Final;
-      } else {
-        exchangeRateFinal = amount2Final / amount1Final;
-      }
+      // Withdrew - use provided end block and final amount
+      endBlock = parseInt(formData.endBlock);
+      finalAmount = parseFloat(formData.finalAmount);
+      exchangeRateFinal = finalAmount / initialAmount;
     }
 
-    // Calculate number of days (assuming current block for end if still in vault)
-    const currentBlock = 21200000; // Approximate current block (you can update this)
-    const endBlock = formData.depositStatus === 'vault' ? currentBlock : Math.max(parseInt(formData.amount1Final) || 0, parseInt(formData.amount2Final) || 0);
+    // Calculate number of days
     const numberOfDays = (endBlock - startBlock) / BLOCKS_PER_DAY;
+
+    // Initial exchange rate is always 1 (starting point)
+    const exchangeRateInitial = 1;
 
     // Calculate variable yield APY
     const variableYieldAPY = ((exchangeRateFinal / exchangeRateInitial) - 1) / numberOfDays * 365 * 100;
@@ -138,9 +139,15 @@ export const APYSimulator: React.FC = () => {
     const formula = `((${exchangeRateFinal.toFixed(6)} / ${exchangeRateInitial.toFixed(6)}) - 1) / ${numberOfDays.toFixed(2)} × 365 × 100 + ${fixedYieldAPY}% + ${restakingAPY}%`;
 
     return {
+      initialAsset: formData.initialAsset,
+      initialAmount,
+      finalAsset: formData.finalAsset,
+      finalAmount,
+      startBlock,
+      endBlock,
+      numberOfDays: Math.round(numberOfDays * 100) / 100,
       exchangeRateInitial: Math.round(exchangeRateInitial * 1000000) / 1000000,
       exchangeRateFinal: Math.round(exchangeRateFinal * 1000000) / 1000000,
-      numberOfDays: Math.round(numberOfDays * 100) / 100,
       variableYieldAPY: Math.round(variableYieldAPY * 100) / 100,
       fixedYieldAPY,
       restakingAPY,
@@ -152,7 +159,7 @@ export const APYSimulator: React.FC = () => {
   const handleCalculate = async () => {
     // Validation
     const requiredFields = [
-      'amount1Initial', 'amount2Initial', 'startBlock', 'fixedYieldAPY', 'restakingAPY'
+      'initialAmount', 'startBlock', 'fixedYieldAPY', 'restakingAPY'
     ];
 
     const missingFields = requiredFields.filter(field => !formData[field as keyof SimulationData]);
@@ -161,8 +168,9 @@ export const APYSimulator: React.FC = () => {
       missingFields.push('currentExchangeRate');
     }
 
-    if (formData.depositStatus === 'withdrew' && (!formData.amount1Final || !formData.amount2Final)) {
-      missingFields.push('amount1Final', 'amount2Final');
+    if (formData.depositStatus === 'withdrew') {
+      if (!formData.endBlock) missingFields.push('endBlock');
+      if (!formData.finalAmount) missingFields.push('finalAmount');
     }
 
     if (missingFields.length > 0) {
@@ -185,19 +193,16 @@ export const APYSimulator: React.FC = () => {
     setShowResults(false);
     setResult(null);
     setFormData({
-      asset1Initial: 'WETH',
-      amount1Initial: '',
-      asset2Initial: 'liquidETH',
-      amount2Initial: '',
+      initialAsset: 'WETH',
+      initialAmount: '',
       startBlock: '',
-      asset1Final: 'WETH',
-      amount1Final: '',
-      asset2Final: 'liquidETH',
-      amount2Final: '',
-      fixedYieldAPY: '',
-      restakingAPY: '',
       depositStatus: 'vault',
-      currentExchangeRate: ''
+      endBlock: '',
+      finalAsset: 'liquidETH',
+      finalAmount: '',
+      currentExchangeRate: '',
+      fixedYieldAPY: '',
+      restakingAPY: ''
     });
   };
 
@@ -252,26 +257,56 @@ export const APYSimulator: React.FC = () => {
             </div>
           </div>
 
-          {/* Exchange Rate Summary */}
+          {/* Asset Summary */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
               <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 mb-2">
-                  {result.exchangeRateInitial.toFixed(6)}
+                <div className="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-2">
+                  Initial Deposit
                 </div>
-                <div className="text-gray-600 dark:text-gray-300">
-                  Exchange Rate Initial
+                <div className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
+                  {result.initialAmount.toLocaleString()} {result.initialAsset}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Block: {result.startBlock.toLocaleString()}
                 </div>
               </div>
             </div>
             
             <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-xl p-6">
               <div className="text-center">
-                <div className="text-2xl font-bold text-purple-600 dark:text-purple-400 mb-2">
-                  {result.exchangeRateFinal.toFixed(6)}
+                <div className="text-lg font-semibold text-purple-600 dark:text-purple-400 mb-2">
+                  {formData.depositStatus === 'vault' ? 'Current Value' : 'Final Value'}
                 </div>
-                <div className="text-gray-600 dark:text-gray-300">
-                  Exchange Rate Final
+                <div className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
+                  {result.finalAmount.toLocaleString()} {result.finalAsset}
+                </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                  Block: {result.endBlock.toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Exchange Rate Summary */}
+          <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-6">
+            <div className="text-center">
+              <div className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">
+                Exchange Rate Growth
+              </div>
+              <div className="flex items-center justify-center gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {result.exchangeRateInitial.toFixed(6)}
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Initial</div>
+                </div>
+                <ArrowRight className="w-6 h-6 text-gray-400" />
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {result.exchangeRateFinal.toFixed(6)}
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Final</div>
                 </div>
               </div>
             </div>
@@ -348,7 +383,7 @@ export const APYSimulator: React.FC = () => {
               Calculation Details
             </h5>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="bg-white dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                 <div className="font-medium text-gray-700 dark:text-gray-300 mb-1">Duration</div>
                 <div className="text-xl font-semibold text-gray-900 dark:text-white">
@@ -357,37 +392,16 @@ export const APYSimulator: React.FC = () => {
               </div>
               
               <div className="bg-white dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
-                <div className="font-medium text-gray-700 dark:text-gray-300 mb-1">Initial Assets</div>
-                <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                  {formData.asset1Initial}: {parseFloat(formData.amount1Initial).toLocaleString()}
-                </div>
-                <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                  {formData.asset2Initial}: {parseFloat(formData.amount2Initial).toLocaleString()}
-                </div>
-              </div>
-              
-              <div className="bg-white dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
-                <div className="font-medium text-gray-700 dark:text-gray-300 mb-1">Final Assets</div>
-                {formData.depositStatus === 'vault' ? (
-                  <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                    Still in vault
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {formData.asset1Final}: {parseFloat(formData.amount1Final).toLocaleString()}
-                    </div>
-                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                      {formData.asset2Final}: {parseFloat(formData.amount2Final).toLocaleString()}
-                    </div>
-                  </>
-                )}
-              </div>
-              
-              <div className="bg-white dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                 <div className="font-medium text-gray-700 dark:text-gray-300 mb-1">Status</div>
                 <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                  {formData.depositStatus === 'vault' ? 'In Vault' : 'Withdrew'}
+                  {formData.depositStatus === 'vault' ? 'Still in Vault' : 'Withdrew'}
+                </div>
+              </div>
+              
+              <div className="bg-white dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                <div className="font-medium text-gray-700 dark:text-gray-300 mb-1">Block Range</div>
+                <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {result.startBlock.toLocaleString()} → {result.endBlock.toLocaleString()}
                 </div>
               </div>
             </div>
@@ -408,12 +422,13 @@ export const APYSimulator: React.FC = () => {
           <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-6">
             <h5 className="font-semibold text-green-800 dark:text-green-300 mb-3 text-lg">Simulation Notes</h5>
             <ul className="text-sm text-green-700 dark:text-green-300 space-y-2">
-              <li>• Exchange rates are calculated based on asset amount ratios</li>
-              <li>• Variable yield reflects the change in exchange rate over time</li>
+              <li>• Single asset deposit with clear start and end points</li>
+              <li>• Variable yield reflects the growth in asset value over time</li>
               <li>• Fixed yield and restaking APY are added to the variable component</li>
+              <li>• For "Still in Vault": Uses current exchange rate and estimated current block</li>
+              <li>• For "Withdrew": Uses actual withdrawal block and final amount</li>
               <li>• Approximately {BLOCKS_PER_DAY.toLocaleString()} blocks per day on Ethereum</li>
               <li>• Results are annualized (multiplied by 365 days)</li>
-              <li>• All calculations are rounded to 2 decimal places for precision</li>
             </ul>
           </div>
         </GlassCard>
@@ -429,58 +444,30 @@ export const APYSimulator: React.FC = () => {
       </div>
 
       <GlassCard className="space-y-6">
-        {/* Initial Assets */}
+        {/* Initial Deposit */}
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-green-400" />
-            Initial Assets
+            Initial Deposit
           </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-4">
-              <Select
-                label="Asset 1 Initial"
-                value={formData.asset1Initial}
-                onChange={(value) => updateField('asset1Initial', value)}
-                options={ASSET1_OPTIONS}
-              />
-              <Input
-                label="Asset 1 Amount"
-                type="number"
-                value={formData.amount1Initial}
-                onChange={(value) => updateField('amount1Initial', value)}
-                placeholder="0.00"
-                step="0.000001"
-                required
-              />
-            </div>
-            
-            <div className="space-y-4">
-              <Select
-                label="Asset 2 Initial"
-                value={formData.asset2Initial}
-                onChange={(value) => updateField('asset2Initial', value)}
-                options={ASSET2_OPTIONS}
-              />
-              <Input
-                label="Asset 2 Amount"
-                type="number"
-                value={formData.amount2Initial}
-                onChange={(value) => updateField('amount2Initial', value)}
-                placeholder="0.00"
-                step="0.000001"
-                required
-              />
-            </div>
+            <Select
+              label="Initial Asset"
+              value={formData.initialAsset}
+              onChange={(value) => updateField('initialAsset', value)}
+              options={ASSET_OPTIONS}
+            />
+            <Input
+              label="Initial Amount"
+              type="number"
+              value={formData.initialAmount}
+              onChange={(value) => updateField('initialAmount', value)}
+              placeholder="0.00"
+              step="0.000001"
+              required
+            />
           </div>
-        </div>
-
-        {/* Deposit Period */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-blue-400" />
-            Deposit Period
-          </h3>
           
           <Input
             label="Start Block"
@@ -494,69 +481,83 @@ export const APYSimulator: React.FC = () => {
 
         {/* Deposit Status */}
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Deposit Status</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-blue-400" />
+            Current Status
+          </h3>
           
           <Select
+            label="Deposit Status"
             value={formData.depositStatus}
             onChange={(value) => updateField('depositStatus', value)}
             options={DEPOSIT_STATUS_OPTIONS}
           />
         </div>
 
-        {/* Conditional Fields Based on Deposit Status */}
+        {/* Conditional Fields Based on Status */}
         {formData.depositStatus === 'vault' ? (
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Current Exchange Rate</h3>
-            <Input
-              label="Current Exchange Rate"
-              type="number"
-              value={formData.currentExchangeRate}
-              onChange={(value) => updateField('currentExchangeRate', value)}
-              placeholder="e.g., 1.05"
-              step="0.000001"
-              required
-            />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Current Vault Status</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Select
+                label="Current Asset Type"
+                value={formData.finalAsset}
+                onChange={(value) => updateField('finalAsset', value)}
+                options={LIQUID_ASSET_OPTIONS}
+              />
+              <Input
+                label="Current Exchange Rate"
+                type="number"
+                value={formData.currentExchangeRate}
+                onChange={(value) => updateField('currentExchangeRate', value)}
+                placeholder="e.g., 1.05"
+                step="0.000001"
+                required
+              />
+            </div>
+            
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                <strong>Exchange Rate:</strong> How much your initial asset has grown. For example, if you deposited 1 WETH and it's now worth 1.05 liquidETH, enter 1.05.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Final Assets (After Withdrawal)</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Withdrawal Details</h3>
+            
+            <Input
+              label="End Block (Withdrawal Block)"
+              type="number"
+              value={formData.endBlock}
+              onChange={(value) => updateField('endBlock', value)}
+              placeholder="e.g., 21000000"
+              required
+            />
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-4">
-                <Select
-                  label="Asset 1 Final"
-                  value={formData.asset1Final}
-                  onChange={(value) => updateField('asset1Final', value)}
-                  options={ASSET1_OPTIONS}
-                />
-                <Input
-                  label="Asset 1 Final Amount"
-                  type="number"
-                  value={formData.amount1Final}
-                  onChange={(value) => updateField('amount1Final', value)}
-                  placeholder="0.00"
-                  step="0.000001"
-                  required
-                />
-              </div>
-              
-              <div className="space-y-4">
-                <Select
-                  label="Asset 2 Final"
-                  value={formData.asset2Final}
-                  onChange={(value) => updateField('asset2Final', value)}
-                  options={ASSET2_OPTIONS}
-                />
-                <Input
-                  label="Asset 2 Final Amount"
-                  type="number"
-                  value={formData.amount2Final}
-                  onChange={(value) => updateField('amount2Final', value)}
-                  placeholder="0.00"
-                  step="0.000001"
-                  required
-                />
-              </div>
+              <Select
+                label="Final Asset Type"
+                value={formData.finalAsset}
+                onChange={(value) => updateField('finalAsset', value)}
+                options={LIQUID_ASSET_OPTIONS}
+              />
+              <Input
+                label="Final Amount Received"
+                type="number"
+                value={formData.finalAmount}
+                onChange={(value) => updateField('finalAmount', value)}
+                placeholder="0.00"
+                step="0.000001"
+                required
+              />
+            </div>
+            
+            <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+              <p className="text-sm text-purple-700 dark:text-purple-300">
+                <strong>Final Amount:</strong> The actual amount you received when you withdrew from the vault.
+              </p>
             </div>
           </div>
         )}
@@ -565,7 +566,7 @@ export const APYSimulator: React.FC = () => {
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
             <Percent className="w-5 h-5 text-purple-400" />
-            APY Components
+            Additional APY Components
           </h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -594,12 +595,13 @@ export const APYSimulator: React.FC = () => {
         <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-6">
           <h4 className="font-semibold text-green-800 dark:text-green-300 mb-3 text-lg">How It Works</h4>
           <ul className="text-sm text-green-700 dark:text-green-300 space-y-2">
-            <li>• <strong>Exchange Rate:</strong> Calculated as the ratio between asset amounts</li>
-            <li>• <strong>Variable Yield:</strong> Based on the change in exchange rate over time</li>
-            <li>• <strong>Fixed Yield:</strong> Guaranteed yield component (e.g., staking rewards)</li>
-            <li>• <strong>Restaking APY:</strong> Additional rewards from restaking protocols</li>
-            <li>• <strong>Total APY:</strong> Sum of all three components, annualized</li>
-            <li>• <strong>Vault Status:</strong> Choose whether you're still deposited or have withdrawn</li>
+            <li>• <strong>Single Asset Tracking:</strong> Track one asset from deposit to current state or withdrawal</li>
+            <li>• <strong>Variable Yield:</strong> Calculated from the growth in asset value over time</li>
+            <li>• <strong>Still in Vault:</strong> Uses current exchange rate to estimate current value</li>
+            <li>• <strong>Withdrew:</strong> Uses actual withdrawal data for precise calculation</li>
+            <li>• <strong>Fixed Yield:</strong> Additional guaranteed yield (e.g., staking rewards)</li>
+            <li>• <strong>Restaking APY:</strong> Extra rewards from restaking protocols</li>
+            <li>• <strong>Total APY:</strong> Sum of all components, annualized to yearly percentage</li>
           </ul>
         </div>
 
